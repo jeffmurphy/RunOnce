@@ -12,6 +12,7 @@ package RUNONCE;
 
 use IO 1.18;
 use IO::Socket;
+use Fcntl;
 my $listen  = undef;
 my $VERSION = 1.0;
 
@@ -37,14 +38,14 @@ sub alreadyRunning($$) {
 	my ($ps, $rt) = (shift, shift);
 
 	if(defined($ps)) {
-		if(($ps =~ /^\d+$/) && ($ps <= 1024)) {
-			die "RUNONCE::alreadyRunning() : socketNumber must > 1024";
+		if($ps !~ /^\d+$/) {
+			my $portNum = getservbyname($ps, 'tcp');
+			if(!defined($portNum)) {
+				die "RUNONCE::alreadyRunning() : unknown port <$ps>";
+			}
+			$portNum = $ps;
 		}
-		my $portNum = getservbyname($ps, 'tcp');
-		if(!defined($portNum)) {
-			die "RUNONCE::alreadyRunning() : unknown port <$ps>";
-		}
-		# else, ps is probably a service name and not a port number
+
 	} else {
 		$ps = 16000; # default
 	}
@@ -137,6 +138,16 @@ sub alreadyRunning2($) {
 		return $remotePid;
 	}
 
+	# else, we got the socket. set close-on-exec so we dont
+	# pass it to any children. if this call fails, be sure to
+	# call RUNONCE::close() before using system(), etc to 
+	# run other processes.
+
+	my $rv = fcntl($RUNONCE::listen, F_SETFD, 1);
+	if($rv != 0) {
+		warn "RUNONCE failed to set close-on-exec (fcntl failed with \"$rv\"";
+	}
+	print "rv <$rv>\n" if ($rv == 0);
 	$RUNONCE::listen->blocking(0);
 	return 0;
 }
@@ -202,6 +213,21 @@ socket for re-use.
 =head1 USAGE
 
 =over 4
+
+=item close() returns NOTHING
+
+     If you want to close the socket, to allow another copy 
+     of the script to run, you can call this routine. 
+
+     Also, RUNONCES attempts to set exec-on-close (via fcntl)
+     so that the socket is not passed to child processes (launched
+     via system() for example). If fcntl fails, child processes will
+     hold the socket open and cause future runs of the script to
+     fail. If that occurs, you can call close() before using system().
+     Be aware that this implies that another copy of the script could
+     start running after you call close(). If you try to call 
+     alreadyRunning() again to grab the socket, you might not get it
+     and you might have to retry.
 
 =item handleConnection() returns NOTHING
 
