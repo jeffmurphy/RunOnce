@@ -24,7 +24,8 @@ use RUNONCE;
 
 # pidSocket can be a service name or a port number
 
-my $pidSocket = "runonce"; #16000;
+my $pidSocket = "runonce";
+   $pidSocket = 16000;
 
 print "Seeing if I'm already running...\n";
 

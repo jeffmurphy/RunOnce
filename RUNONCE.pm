@@ -10,6 +10,7 @@
 
 package RUNONCE;
 
+use IO 1.18;
 use IO::Socket;
 my $listen  = undef;
 my $VERSION = 1.0;
@@ -38,6 +39,10 @@ sub alreadyRunning($$) {
 	if(defined($ps)) {
 		if(($ps =~ /^\d+$/) && ($ps <= 1024)) {
 			die "RUNONCE::alreadyRunning() : socketNumber must > 1024";
+		}
+		my $portNum = getservbyname($ps, 'tcp');
+		if(!defined($portNum)) {
+			die "RUNONCE::alreadyRunning() : unknown port <$ps>";
 		}
 		# else, ps is probably a service name and not a port number
 	} else {
