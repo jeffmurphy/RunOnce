@@ -10,17 +10,26 @@
 # to read them.
 #
 # $Log$
+# Revision 1.4  2001/03/21 15:34:47  jcmurphy
+# added fcntl
+#
 #
 
 package RUNONCE;
 
-use IO 1.18;
+use IO 1.20;
 use IO::Socket;
 use Fcntl;
 my $listen  = undef;
 $RUNONCE::VERSION = "1.0";
 
 sub D { 0; }
+
+sub close {
+	if(defined($RUNONCE::listen)) {
+		$RUNONCE::listen->close();
+	}
+}
 
 # ROUTINE
 #   alreadyRunning(pidSocket, retries, listenqueue)
@@ -151,7 +160,7 @@ sub alreadyRunning2($$) {
 
 	my $rv = fcntl($RUNONCE::listen, F_SETFD, 1);
 	if($rv != 0) {
-		warn "RUNONCE failed to set close-on-exec (fcntl failed with \"$rv\"";
+		warn "RUNONCE failed to set close-on-exec (fcntl failed with \"$rv\")";
 	}
 	$RUNONCE::listen->blocking(0);
 	return 0;
