@@ -7,6 +7,10 @@
 #
 # perldoc RUNONCE.pm 
 #
+# to read them.
+#
+# $Log$
+#
 
 package RUNONCE;
 
@@ -14,12 +18,12 @@ use IO 1.18;
 use IO::Socket;
 use Fcntl;
 my $listen  = undef;
-my $VERSION = 1.0;
+$RUNONCE::VERSION = "1.0";
 
 sub D { 0; }
 
 # ROUTINE
-#   alreadyRunning(pidSocket, retries)
+#   alreadyRunning(pidSocket, retries, listenqueue)
 #
 # DESCRIPTION
 #   create a tcp socket on the given port.
@@ -34,8 +38,8 @@ sub D { 0; }
 # AUTHOR
 #   jeff murphy
 
-sub alreadyRunning($$) {
-	my ($ps, $rt) = (shift, shift);
+sub alreadyRunning {
+	my ($ps, $rt, $lq) = (shift, shift, shift);
 
 	if(defined($ps)) {
 		if($ps !~ /^\d+$/) {
@@ -51,16 +55,18 @@ sub alreadyRunning($$) {
 	}
 
 	$rt = 3 unless (defined($rt) && ($rt >= 0));
-	my $pid;
+	$lq = 16 unless (defined($lq) && ($lq > 0));
 
-	print "RUNONCE::alreadyRunning($ps, $rt)\n"
+	my $pid = undef;
+
+	print "RUNONCE::alreadyRunning($ps, $rt, $lq)\n"
 	  if &RUNONCE::D;
 
 	for (my $i = 0; $i < $rt ; $i++) {
 		print "\n\nalreadyRunning try #$i\n"
 		  if &RUNONCE::D;
 
-		$pid = RUNONCE::alreadyRunning2($ps);
+		$pid = RUNONCE::alreadyRunning2($ps, $lq);
 		print "\nalreadyRunning2 returned $pid\n"
 		  if &RUNONCE::D;
 		return $pid if($pid != -1);
@@ -69,8 +75,8 @@ sub alreadyRunning($$) {
 	return $pid;
 }
 
-sub alreadyRunning2($) {
-	my $ps = shift;
+sub alreadyRunning2($$) {
+	my ($ps, $lq) = (shift, shift);
 	my $mn = $0;
 	if($mn =~ /([^\/]+)$/) {
 		$mn = $1;
@@ -79,7 +85,7 @@ sub alreadyRunning2($) {
 	}
 	print "myname = $mn [$0]\n" if &RUNONCE::D;
 
-	$RUNONCE::listen = IO::Socket::INET->new(Listen    => 16,
+	$RUNONCE::listen = IO::Socket::INET->new(Listen    => $lq,
 						 Proto     => 'tcp',
 						 LocalAddr => '127.0.0.1',
 						 LocalPort => $ps,
@@ -147,7 +153,6 @@ sub alreadyRunning2($) {
 	if($rv != 0) {
 		warn "RUNONCE failed to set close-on-exec (fcntl failed with \"$rv\"";
 	}
-	print "rv <$rv>\n" if ($rv == 0);
 	$RUNONCE::listen->blocking(0);
 	return 0;
 }
@@ -217,9 +222,10 @@ socket for re-use.
 =item close() returns NOTHING
 
      If you want to close the socket, to allow another copy 
-     of the script to run, you can call this routine. 
+     of the script to run (without exitting the currently
+     running script) you can call this routine. 
 
-     Also, RUNONCES attempts to set exec-on-close (via fcntl)
+     Also, RUNONCE attempts to set exec-on-close (via fcntl)
      so that the socket is not passed to child processes (launched
      via system() for example). If fcntl fails, child processes will
      hold the socket open and cause future runs of the script to
@@ -231,10 +237,13 @@ socket for re-use.
 
 =item handleConnection() returns NOTHING
 
-     In order for RUNONCE to function correctly, you must 
+     In order for RUNONCE to function correctly, you should 
      periodically call this routine. This routine need only
      be called by scripts that have successfully determined
-     that they are running exclusively (see below).
+     that they are running exclusively (see below). If you 
+     don't call this script, other scripts will hang while they
+     attempt to connect to the currently running script. This
+     feature is actually useful.
 
      This routine handles connections from other instances
      of your script and is used to inform them that they are 
@@ -247,9 +256,13 @@ socket for re-use.
 
      If you have alot of scripts queued, the retry count (default 
      of 3 - see below) will eventually cause some of them to 
-     die.
+     die. The "listen" queue is set to 16 by default. If you 
+     choose to not call handleConnection() then 16 copies of the
+     script will queue while the running copies executes. The 17th
+     (and beyond) copy will receive a connection refused message.
+     This will causes a return value of -1 (error).
 
-=item alreadyRunning(tcp_port, number_of_retries) returns INTEGER
+=item alreadyRunning(tcp_port, number_of_retries, listen-queue) returns INTEGER
 
      This routine performs the actual "is another copy of me running
      already" test. tcp_port number defaults to 16000, but you should
@@ -257,7 +270,8 @@ socket for re-use.
      This routine will perform a sanity check incase somebody else
      as stolen our port.
 
-     tcp_port 
+     tcp_port          DEFAULT 16000
+
               The port to bind to. you should 
               select a port that can be used exclusively
               by your script. You can alternately specify 
@@ -266,29 +280,39 @@ socket for re-use.
               same name as your script and then pass basename
               of $0 as the tcp_port).
 
-     number_of_retries
+     number_of_retries DEFAULT 3
+
               There are at least two race conditions which
               could cause RUNONCE to be unsure of whether
               or not another copy is running. If we're unsure,
               we will retry a specified number of times. If
               we are still unsure we return -1
 
+    listen_queue       DEFAULT 16
+
+              This value determines how many scripts will queue
+              if you are not going to call handleConnection().
+              It also comes into play if your scripts are firing
+              of faster than the running script can handle the
+              incoming connections. The kernel will queue up 
+              16 connections before it starts refusing the connections.
+
 =back
 
-=head1 RETURN VALUES
+=head1 RETURN VALUES for alreadyRunning()
 
 =over 4
 
-=item -1  FATAL ERROR
+ -1          =  FATAL ERROR
 
       We can't be sure that another copy isn't running.
 
-=item  0  SUCCESS
+  0          =  SUCCESS
 
       Another copy is _not_ running, we've bound to the tcp
       port and your script is cleared to proceed.
 
-=item  E<gt>0  FAILURE
+  1 or more  =  FAILURE
 
       Another copy of the script is already running, this
       value is the process ID of the other copy.
